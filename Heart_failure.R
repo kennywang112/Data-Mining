@@ -1,60 +1,104 @@
 library(tidyverse)
-library(party)
 
-data <- read_csv("/Users/wangqiqian/Desktop/資料探勘/cancer_prediction_dataset.csv")
-
+# 目標：複回歸模型預測及檢測
+data <- read_csv("/Users/wangqiqian/Desktop/資料探勘/data/heart_failure_clinical_records_dataset.csv")
+# 這筆資料要預測Salary，而Gender/Education/Job/Experience 為質性變數
+data%>%head()
+# 資料quantile & min max
 data%>%summary()
+# 維度
 data%>%dim()
+# 缺失值？
 all(is.na(data))
-# EDA
-gender_cancer <- data%>%group_by(Gender, Cancer)%>%summarize(count = n(), percent = count/10000)
-pie(x=gender_cancer$percent,
-    labels = paste('Gender:',gender_cancer$Gender, 'Cancer: ',
-                   gender_cancer$Cancer, '\n', gender_cancer$percent))
+data
 
-# 各個年齡得癌症比例
-age_data <- data
-age_data$Age_split <- case_when(
-  data$Age < 20 ~ "<20",
-  data$Age < 30 & data$Age >= 20 ~ "20~29",
-  data$Age < 40 & data$Age >= 30 ~ "30~39",
-  data$Age < 50 & data$Age >= 40 ~ "40~49",
-  data$Age < 60 & data$Age >= 50 ~ "50~59",
-  data$Age < 70 & data$Age >= 60 ~ "60~69",
-  data$Age < 80 & data$Age >= 70 ~ "70~79",
-  data$Age < 90 & data$Age >= 80 ~ "80~89",
-  data$Age >= 90 ~ "90~"
-)
+data$DEATH_EVENT<-as.factor(data$DEATH_EVENT)
+ggplot(data)+geom_density(aes(age,fill=DEATH_EVENT),alpha=0.4)+scale_fill_grey()
 
-age_cancer <- age_data%>%group_by(Age_split, Cancer)%>%summarize(count = n())
-age_cancer%>%group_by(Age_split)%>%summarize(sum(count))
-age_cancer$percent <- case_when(
-  age_cancer$Age_split == "<20" ~ age_cancer$count/241,
-  age_cancer$Age_split == "20~29" ~ age_cancer$count/1170,
-  age_cancer$Age_split == "30~39" ~ age_cancer$count/1205,
-  age_cancer$Age_split == "40~49" ~ age_cancer$count/1155,
-  age_cancer$Age_split == "50~59" ~ age_cancer$count/1226,
-  age_cancer$Age_split == "60~69" ~ age_cancer$count/1222,
-  age_cancer$Age_split == "70~79" ~ age_cancer$count/1236,
-  age_cancer$Age_split == "80~89" ~ age_cancer$count/1212,
-  age_cancer$Age_split == "90~" ~ age_cancer$count/1333
-)
-#age_cancer%>%ggplot(aes(Age_split, count, fill = as.character(Cancer)))+geom_col()+
-#  geom_text(label = round(age_cancer$percent, 3), position = position_dodge(0.9),vjust=0)
-age_cancer%>%filter(Cancer == 1)%>%ggplot()+geom_col(aes(Age_split, percent, fill = Age_split))
+#各個資料在是否死亡下的平均
+death_data<-filter(data,DEATH_EVENT==1)
+notdeath_data<-filter(data,DEATH_EVENT==0)
+mean_death_data<-list()
+mean_notdeath_data<-list()
+clst<-list()
+for(i in 2:ncol(data)-1) {
+  a<-sum(death_data[[i]])/nrow(death_data[i])
+  mean_death_data<-append(mean_death_data,a)
+  b<-sum(notdeath_data[[i]])/nrow(notdeath_data[i])
+  mean_notdeath_data<-append(mean_notdeath_data,b)
+  clst<-append(clst,names(data[i]))
+}
+mean_data <- as.matrix(rbind(clst,mean_death_data,mean_notdeath_data))
+mean_data
 
-data%>%group_by(Smoking)%>%summarize(Percent_cancer = sum(Cancer)/n())
-data%>%group_by(Fatigue)%>%summarize(Percent_cancer = sum(Cancer)/n())
-data%>%group_by(Allergy)%>%summarize(Percent_cancer = sum(Cancer)/n())
+data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, age))+labs(title='Age vs Death event')
+data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, ejection_fraction))+labs(title='Ejection_fraction vs Death event')
+data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, serum_creatinine))+labs(title='Serum_creatinine vs Death event')
+data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, serum_sodium))+labs(title='Serum_sodium vs Death event')
+data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, time))+labs(title='Time vs Death event')
 
-library(tree)
 set.seed(1)
-ind <- sample(2, nrow(data), replace = TRUE, prob = c(0.7, 0.3))
-train_data <- data[ind == 1, ]
-test_data <- data[ind == 2, ]
-tree_model <- tree(Cancer ~ Gender + Age, data = train_data)
+train <- sample(1:nrow(data),210)
+train_data <- data[train,]
+test_data <- data[-train,]
+
+library(rpart)
+library(rpart.plot)
+# 決策樹
+tree_model <- rpart(DEATH_EVENT ~.,data = train_data)
 tree_model
-plot(tree_model, type = "uniform")
+# cp懲罰誤差過大的樹，nsplit分支樹，rel error訓練中各種樹對應的誤差，xerror交叉驗證的誤差，xstd交叉驗證誤差的標準差
+# cp = conditional probability
+tree_model$cptable
+
+par(mfrow = c(1, 2))
+rpart.plot(tree_model)
+# 交叉驗證誤差
+plotcp(tree_model)
+
+tree_pred <- predict(tree_model, test_data, method='class')
+predicted_labels <- apply(tree_pred, 1, which.max) - 1
+table(test_data$DEATH_EVENT, predicted_labels)
+sum(diag(table(test_data$DEATH_EVENT, predicted_labels)))/sum(table(test_data$DEATH_EVENT, predicted_labels))
+
+#opt <- tree_model$cptable[which.min(tree_model$cptable[,"xerror"]),"CP"]
+#model.ptree <- prune(tree_model, cp = opt)
+#rpart.plot(model.ptree)
+#pruned_pred <- predict(model.ptree, test_data, method='class')
+#pruned_predicted_labels <- apply(pruned_pred, 1, which.max) - 1
+#sum(diag(table(test_data$DEATH_EVENT, pruned_predicted_labels)))/sum(table(test_data$DEATH_EVENT, pruned_predicted_labels))
+
+# remove outlier
+data%>%filter(DEATH_EVENT == 0)%>%summary()
+data%>%filter(DEATH_EVENT == 1)%>%summary()
+
+filtered_data <- data%>%filter(DEATH_EVENT == 0 & age < 90 | DEATH_EVENT == 1)
+filtered_data <- filtered_data%>%filter(DEATH_EVENT == 0 & serum_creatinine <  1.2*1.5 | DEATH_EVENT == 1 & serum_creatinine <  1.9*1.5)
+filtered_data <- filtered_data%>%filter(DEATH_EVENT == 0 & ejection_fraction <  45*1.5 | DEATH_EVENT == 1 & ejection_fraction <  38*1.5)
+filtered_data <- filtered_data%>%filter(DEATH_EVENT == 1 & time < 102*1.5 | DEATH_EVENT == 0)
+
+filtered_data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, age))+labs(title='Age vs Death event')
+filtered_data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, serum_creatinine))+labs(title='serum_creatinine vs Death event')
+filtered_data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, ejection_fraction))+labs(title='ejection_fraction vs Death event')
+filtered_data%>%ggplot()+geom_boxplot(aes(DEATH_EVENT, time))+labs(title='time vs Death event')
+
+filtered_train_data <- filtered_data[train,]
+filtered_test_data <- filtered_data[-train,]
+
+tree_model <- rpart(DEATH_EVENT ~.,data = filtered_train_data)
+tree_model
+# cp懲罰誤差過大的樹，nsplit分支樹，rel error訓練中各種樹對應的誤差，xerror交叉驗證的誤差，xstd交叉驗證誤差的標準差
+# cp = conditional probability
+tree_model$cptable
+
+rpart.plot(tree_model)
+# 交叉驗證誤差
+plotcp(tree_model)
+
+tree_pred <- predict(tree_model, test_data, method='class')
+predicted_labels <- apply(tree_pred, 1, which.max) - 1
+table(test_data$DEATH_EVENT, predicted_labels)
+sum(diag(table(test_data$DEATH_EVENT, predicted_labels)))/sum(table(test_data$DEATH_EVENT, predicted_labels))
 
 
 
