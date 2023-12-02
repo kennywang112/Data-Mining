@@ -4,7 +4,7 @@ library(car)
 library(MASS)
 
 # 目標：複回歸模型預測及檢測
-data <- read_csv("/Users/wangqiqian/Desktop/資料探勘/Salary.csv")
+data <- read_csv("/Users/wangqiqian/Desktop/資料探勘/data/Salary.csv")
 # 這筆資料要預測Salary，而Gender/Education/Job/Experience 為質性變數
 data%>%head()
 # 資料quantile & min max
@@ -95,8 +95,9 @@ set.seed(123)
 train_ind <- sample(seq_len(nrow(data)), size = smp_size)
 
 train <- data[train_ind, ]
-y_test <- data[-train_ind, ]%>%select(Salary)
-test <- data[-train_ind, ]%>%select(-Salary)
+test <- data[-train_ind, ]
+y_test <- test[6]
+test <- test[-6]
 
 # 先測試原始回歸模型
 model <- lm(formula = Salary ~ ., data = train)
