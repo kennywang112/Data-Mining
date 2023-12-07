@@ -192,6 +192,45 @@ result_df%>%ggplot(aes(Type_2_Error, Type_1_Error, label = Model))+
 
 
 
+data%>%group_by(time, DEATH_EVENT)%>%summarize(n())
+
+time_data <- data%>%select(time, DEATH_EVENT)
+time_data$time <- case_when(
+  time_data$time >= 62 ~ 1,
+  time_data$time < 62 ~ 0
+)
+time_data <- time_data%>%group_by(time, DEATH_EVENT)%>%summarize(count = n())
+time_data
+#gini index
+sum(time_data$count)
+(64/299)*(1-((9/64)^2+(55/64)^2)) + (235/299)*(1-((194/235)^2+(41/235)^2))
+
+
+serum_data <- data%>%select(serum_creatinine, DEATH_EVENT)
+serum_data$serum_creatinine <- case_when(
+  serum_data$serum_creatinine < 1.2 ~ 1,
+  serum_data$serum_creatinine >= 1.2 ~ 0
+)
+serum_data <- serum_data%>%group_by(serum_creatinine, DEATH_EVENT)%>%summarize(count = n())
+serum_data
+sum(serum_data$count)
+(125/299)*(1-((62/125)^2+(63/125)^2)) + (174/299)*(1-((141/174)^2+(33/174)^2))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
